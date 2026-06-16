@@ -94,17 +94,35 @@ import re
 from typing import Optional, Dict, Any
 
 
-def get_gemini_api_key() -> str:
-    """Get Gemini API key with proper error handling."""
+def get_gemini_api_key(user_id: str = None) -> str:
+    """Get Gemini API key: DB first, then env var."""
+    # 1. Try DB (user-saved key via onboarding)
+    if user_id:
+        try:
+            from services.database import get_db_session
+            from models.onboarding_models import APIKeyStorage
+            from sqlalchemy import text as sql_text
+            with get_db_session() as db:
+                row = db.execute(
+                    sql_text("SELECT key FROM api_keys WHERE user_id = :uid AND provider = 'gemini' AND key IS NOT NULL AND key != '' LIMIT 1"),
+                    {"uid": str(user_id)}
+                ).mappings().first()
+                if row and row["key"]:
+                    k = row["key"].strip()
+                    _p = ('your_', 'placeholder', 'xxx', 'todo', 'change_me', 'insert_', 'example', 'test_key')
+                    if len(k) >= 20 and not any(m in k.lower() for m in _p):
+                        return k
+        except Exception as e:
+            logger.debug(f"DB Gemini key lookup failed: {e}")
+
+    # 2. Env var fallback
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key:
-        error_msg = "GEMINI_API_KEY environment variable is not set. Please set it in your .env file."
+        error_msg = "GEMINI_API_KEY not found in DB or environment variables."
         logger.error(error_msg)
         raise ValueError(error_msg)
-    
+
     # Validate API key format (basic check)
-    # Google API keys do not always use the legacy AIza prefix in newer deployments.
-    # Keep only presence/length validation here.
     if len(api_key.strip()) < 20:
         error_msg = "GEMINI_API_KEY appears to be too short. Please check your API credentials."
         logger.error(error_msg)
@@ -120,7 +138,7 @@ def get_gemini_api_key() -> str:
         )
         logger.error(error_msg)
         raise ValueError(error_msg)
-    
+
     return api_key.strip()
 
 def _is_non_retryable_gemini_error(exc: Exception) -> bool:
@@ -376,7 +394,7 @@ def gemini_structured_json_response(prompt, schema, temperature=0.7, top_p=0.9, 
     """
     try:
         # Get API key with proper error handling
-        api_key = get_gemini_api_key()
+        api_key = get_gemini_api_key(user_id)
         logger.info(f"🔑 Gemini API key loaded: {bool(api_key)} (length: {len(api_key) if api_key else 0})")
         
         if not api_key:
