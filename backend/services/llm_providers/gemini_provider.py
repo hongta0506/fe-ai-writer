@@ -104,7 +104,14 @@ def get_gemini_api_key(user_id: str = None) -> str:
             from sqlalchemy import text as sql_text
             with get_db_session() as db:
                 row = db.execute(
-                    sql_text("SELECT key FROM api_keys WHERE user_id = :uid AND provider = 'gemini' AND key IS NOT NULL AND key != '' LIMIT 1"),
+                    sql_text("""
+                        SELECT ak.key FROM api_keys ak
+                        JOIN onboarding_sessions os ON os.id = ak.session_id
+                        WHERE os.user_id = :uid AND ak.provider = 'gemini'
+                        AND ak.key IS NOT NULL AND ak.key != ''
+                        ORDER BY ak.updated_at DESC NULLS LAST
+                        LIMIT 1
+                    """),
                     {"uid": str(user_id)}
                 ).mappings().first()
                 if row and row["key"]:
