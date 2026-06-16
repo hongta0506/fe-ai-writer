@@ -98,8 +98,55 @@ class Step3ResearchService:
             )
             
             if not competitor_results["success"]:
-                logger.error(f"Competitor discovery failed: {competitor_results.get('error')}")
-                return competitor_results
+                logger.error(f"Competitor discovery failed: {competitor_results.get('error')}. Attempting LLM fallback...")
+                
+                # LLM Fallback if Exa fails
+                try:
+                    from services.llm_providers.main_text_generation import llm_text_gen
+                    import json
+                    
+                    prompt = f"Find 5 main competitors for the website {user_url}. "
+                    if industry_context:
+                        prompt += f"The industry context is: {industry_context}. "
+                    if website_analysis_data:
+                        prompt += f"Here is some analysis data: {json.dumps(website_analysis_data)[:500]}. "
+                        
+                    prompt += "Return a valid JSON object with a 'competitors' array. Each competitor should have: 'url' (the website URL), 'name' (company name), 'description' (brief description), 'key_features' (array of strings), 'target_audience' (string), and 'market_position' (string)."
+                    
+                    schema = {
+                        "type": "object",
+                        "properties": {
+                            "competitors": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "url": {"type": "string"},
+                                        "name": {"type": "string"},
+                                        "description": {"type": "string"},
+                                        "key_features": {"type": "array", "items": {"type": "string"}},
+                                        "target_audience": {"type": "string"},
+                                        "market_position": {"type": "string"}
+                                    },
+                                    "required": ["url", "name", "description"]
+                                }
+                            }
+                        },
+                        "required": ["competitors"]
+                    }
+                    
+                    ai_response = llm_text_gen(prompt=prompt, json_struct=schema, user_id=user_id)
+                    parsed_res = json.loads(ai_response)
+                    
+                    competitor_results = {
+                        "success": True,
+                        "competitors": parsed_res.get("competitors", []),
+                        "api_cost": 0.001
+                    }
+                    logger.info("Successfully used LLM fallback for competitor discovery.")
+                except Exception as llm_err:
+                    logger.error(f"LLM fallback also failed: {llm_err}")
+                    return competitor_results
             
             # Process and enhance competitor data
             enhanced_competitors = await self._enhance_competitor_data(
