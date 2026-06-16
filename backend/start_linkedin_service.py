@@ -62,8 +62,8 @@ def check_environment():
         print("  ❌ GEMINI_API_KEY not set")
         print("     Set with: export GEMINI_API_KEY='your_api_key'")
         return False
-    elif not gemini_key.startswith('AIza'):
-        print("  ⚠️  GEMINI_API_KEY format appears invalid (should start with 'AIza')")
+    # elif not gemini_key.startswith('AIza'):
+    #     print("  ⚠️  GEMINI_API_KEY format appears invalid (should start with 'AIza')")
         print("     Please verify your API key")
         return False
     else:

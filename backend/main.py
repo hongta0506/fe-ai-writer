@@ -191,7 +191,7 @@ rate_limiter = RateLimiter(window_seconds=60, max_requests=200)
 frontend_serving = FrontendServing(app)
 router_manager = RouterManager(app)
 
-onboarding_manager = OnboardingManager(app)
+onboarding_manager = OnboardingManager(app) if OnboardingManager else None
 
 # Middleware Order (FastAPI executes in REVERSE order of registration - LIFO):
 # Registration order:  1. Monitoring  2. Rate Limit  3. API Key Injection

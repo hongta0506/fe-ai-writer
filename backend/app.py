@@ -116,14 +116,14 @@ if _is_full_mode():
 # Import subscription API endpoints
 from api.subscription import router as subscription_router
 
-# Import Step 3 onboarding routes (skip in feature-only modes)
+# Import Step 3 onboarding routes (needed when onboarding feature is enabled)
 step3_routes = None
-if _is_full_mode():
+if _is_full_mode() or _is_feature_enabled("onboarding"):
     from api.onboarding_utils.step3_routes import router as step3_routes
 
-# Import SEO tools router (skip in feature-only modes - uses seo_analyzer)
+# Import SEO tools router (needed by onboarding competitor analysis)
 seo_tools_router = None
-if _is_full_mode():
+if _is_full_mode() or _is_feature_enabled("onboarding"):
     from routers.seo_tools import router as seo_tools_router
 
 # Skip heavy services in feature-only modes (PersonaAnalysisService, etc.)
@@ -201,8 +201,8 @@ if _is_full_mode():
 else:
     oauth_token_monitoring_router = None
 
-# Import SEO Dashboard endpoints (skip in feature-only modes to save memory)
-if _is_full_mode():
+# Import SEO Dashboard endpoints (needed by onboarding strategic insights)
+if _is_full_mode() or _is_feature_enabled("onboarding"):
     from api.seo_dashboard import (
         get_seo_dashboard_data,
         get_seo_health_score,
@@ -514,6 +514,19 @@ router_manager.log_startup_summary()
 # in special modes (e.g., demo mode). De-dup is handled by RouterManager.
 router_manager.include_router_safely(subscription_router, "subscription")
 
+# Fallback routes for onboarding frontend (feature-mode compatibility)
+@app.get("/api/seo-dashboard/strategic-insights/history")
+async def strategic_insights_history_fallback(current_user: dict = Depends(get_current_user)):
+    if get_strategic_insights_history:
+        return await get_strategic_insights_history(current_user)
+    return {"success": True, "history": [], "data": []}
+
+@app.post("/api/log-error")
+async def log_error_api_fallback(request: Request):
+    payload = await request.json()
+    logger.error(f"Frontend Error: {payload}")
+    return {"success": True}
+
 # Include assets serving router (must be mounted to serve generated images)
 app.include_router(assets_serving_router)
 router_group_status["assets_serving"] = {
@@ -521,8 +534,8 @@ router_group_status["assets_serving"] = {
     "reason": "Required for podcast media assets",
 }
 
-# SEO Dashboard endpoints (skip in feature-only modes)
-if _is_full_mode():
+# SEO Dashboard endpoints (needed by onboarding strategic insights)
+if _is_full_mode() or _is_feature_enabled("onboarding"):
     @app.get("/api/seo-dashboard/data")
     async def seo_dashboard_data():
         """Get complete SEO dashboard data."""
@@ -688,6 +701,20 @@ else:
         "reason": "Skipped in feature-only mode",
     }
 
+# Feature-mode safety net: onboarding UI calls these routes.
+if not _is_full_mode() and _is_feature_enabled("onboarding"):
+    if seo_tools_router:
+        app.include_router(seo_tools_router)
+    if step3_routes:
+        app.include_router(step3_routes)
+
+# Frontend error reporting route.
+try:
+    from routers.error_logging import router as error_logging_router
+    app.include_router(error_logging_router, prefix="/api")
+except Exception as e:
+    logger.warning(f"Error logging router not mounted: {e}")
+
 # Include content assets router (always — core utility, not feature-specific)
 from api.content_assets.router import router as content_assets_router
 app.include_router(content_assets_router)
@@ -838,7 +865,7 @@ def _assert_router_mounted(router_name: str) -> None:
     
     # Check for router-specific paths
     router_path_indicators = {
-        "subscription": ["/api/subscription/plans", "/api/subscription/preflight"],
+        "subscription": ["/api/subscription/plans", "/api/subscription/preflight-check"],
         "podcast": ["/api/podcast/projects", "/api/podcast/"],
         "blog_writer": ["/api/blog/health", "/api/blog/research/start"],
     }

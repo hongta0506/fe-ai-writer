@@ -66,11 +66,11 @@ export const useApiKeyStep = (onContinue: (stepData?: any) => void) => {
     }
 
     // Validate API key formats
-    if (!geminiKey.trim().startsWith('AIza')) {
-      setError('Gemini API key must start with "AIza"');
-      setLoading(false);
-      return;
-    }
+    // if (!geminiKey.trim().startsWith('AIza')) {
+    //   setError('Gemini API key must start with "AIza"');
+    //   setLoading(false);
+    //   return;
+    // }
 
     // Exa API keys are UUIDs (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
     const exaUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -78,7 +78,7 @@ const CompetitorsGrid: React.FC<CompetitorsGridProps> = ({
 
   const handleAddSubmit = () => {
     if (!newCompetitorUrl) return;
-    
+
     try {
       // Create a basic competitor object
       // In a real implementation, you might want to fetch metadata here or let the parent handle it
@@ -118,9 +118,9 @@ const CompetitorsGrid: React.FC<CompetitorsGridProps> = ({
   return (
     <>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography 
-            variant="h6" 
-            fontWeight={600} 
+        <Typography
+            variant="h6"
+            fontWeight={600}
             sx={{ color: '#1a202c !important' }} // Force dark text
         >
             <BusinessIcon sx={{ mr: 1, verticalAlign: 'middle', color: '#667eea !important' }} />
@@ -142,9 +142,9 @@ const CompetitorsGrid: React.FC<CompetitorsGridProps> = ({
       <Grid container spacing={3}>
         {competitors.map((competitor, index) => (
           <Grid item xs={12} sm={6} md={4} lg={3} xl={2} key={index}>
-            <Card sx={{ 
-              height: '100%', 
-              display: 'flex', 
+            <Card sx={{
+              height: '100%',
+              display: 'flex',
               flexDirection: 'column',
               background: 'linear-gradient(135deg, #e0f2fe 0%, #b3e5fc 100%)',
               border: '1px solid #81d4fa',
@@ -174,9 +174,9 @@ const CompetitorsGrid: React.FC<CompetitorsGridProps> = ({
 
               <CardContent sx={{ flexGrow: 1 }}>
                 <Box display="flex" alignItems="flex-start" gap={2} mb={2}>
-                  <Avatar 
-                    sx={{ 
-                      width: 40, 
+                  <Avatar
+                    sx={{
+                      width: 40,
                       height: 40,
                       backgroundColor: '#f8fafc',
                       border: '1px solid #e2e8f0'
@@ -190,33 +190,33 @@ const CompetitorsGrid: React.FC<CompetitorsGridProps> = ({
                     <BusinessIcon sx={{ color: '#667eea' }} />
                   </Avatar>
                   <Box flex={1} pr={onRemoveCompetitor ? 3 : 0}>
-                    <Typography 
-                      variant="h6" 
-                      fontWeight={600} 
+                    <Typography
+                      variant="h6"
+                      fontWeight={600}
                       gutterBottom
                       sx={{ color: '#1a202c !important', wordBreak: 'break-word' }} // Force dark text for readability
                     >
                       {competitor.title}
                     </Typography>
-                    <Typography 
-                      variant="body2" 
+                    <Typography
+                      variant="body2"
                       gutterBottom
                       sx={{ color: '#4a5568 !important', wordBreak: 'break-all' }} // Force dark text for readability
                     >
                       {competitor.domain}
                     </Typography>
                     <Box display="flex" gap={1} flexWrap="wrap">
-                      <Chip 
+                      <Chip
                         label={`${Math.round(competitor.relevance_score * 100)}% Match`}
                         color="primary"
                         size="small"
                       />
                       {competitor.published_date && (
-                        <Chip 
+                        <Chip
                           label={new Date(competitor.published_date).toLocaleDateString()}
                           variant="outlined"
                           size="small"
-                          sx={{ 
+                          sx={{
                             fontSize: '0.7rem',
                             height: 20,
                             '& .MuiChip-label': { px: 1 }
@@ -227,13 +227,13 @@ const CompetitorsGrid: React.FC<CompetitorsGridProps> = ({
                   </Box>
                 </Box>
 
-                <Typography 
-                  variant="body2" 
+                <Typography
+                  variant="body2"
                   mb={2}
                   sx={{ color: '#2d3748 !important' }} // Force dark text for readability
                 >
-                  {competitor.summary.length > 150 
-                    ? `${competitor.summary.substring(0, 150)}...` 
+                  {(competitor.summary || '').length > 150
+                    ? `${competitor.summary.substring(0, 150)}...`
                     : competitor.summary
                   }
                 </Typography>

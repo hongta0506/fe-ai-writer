@@ -103,12 +103,14 @@ def get_gemini_api_key() -> str:
         raise ValueError(error_msg)
     
     # Validate API key format (basic check)
-    if not api_key.startswith('AIza'):
-        error_msg = "GEMINI_API_KEY appears to be invalid. It should start with 'AIza'."
+    # Google API keys do not always use the legacy AIza prefix in newer deployments.
+    # Keep only presence/length validation here.
+    if len(api_key.strip()) < 20:
+        error_msg = "GEMINI_API_KEY appears to be too short. Please check your API credentials."
         logger.error(error_msg)
         raise ValueError(error_msg)
     
-    return api_key
+    return api_key.strip()
 
 def _is_non_retryable_gemini_error(exc: Exception) -> bool:
     """Skip retries for deterministic quota exhaustion and auth errors."""
@@ -217,8 +219,8 @@ async def test_gemini_api_key(api_key: str) -> tuple[bool, str]:
         if not api_key:
             return False, "API key is empty"
         
-        if not api_key.startswith('AIza'):
-            return False, "API key format appears invalid (should start with 'AIza')"
+        # if not api_key.startswith('AIza'):
+        #     return False, "API key format appears invalid (should start with 'AIza')"
         
         # Configure Gemini with the provided key
         client = genai.Client(api_key=api_key)

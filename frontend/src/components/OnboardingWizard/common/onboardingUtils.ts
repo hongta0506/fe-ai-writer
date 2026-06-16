@@ -4,7 +4,7 @@ export const validateApiKey = (key: string, provider: string): boolean | null =>
   
   const patterns = {
     openai: /^sk-[a-zA-Z0-9]{32,}$/,
-    gemini: /^AIza[a-zA-Z0-9_-]{35}$/,
+    gemini: /.*/,
     anthropic: /^sk-ant-[a-zA-Z0-9]{32,}$/,
     mistral: /^[a-zA-Z0-9]{32,}$/,
   };

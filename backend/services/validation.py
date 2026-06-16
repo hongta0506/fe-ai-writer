@@ -204,8 +204,8 @@ def validate_api_key(provider: str, api_key: str) -> Dict[str, Any]:
                 return {'valid': False, 'error': 'OpenAI API key seems too short'}
         
         elif provider == "gemini":
-            if not api_key.startswith("AIza"):
-                return {'valid': False, 'error': 'Google API key must start with "AIza"'}
+            # if not api_key.startswith("AIza"):
+            #     return {'valid': False, 'error': 'Google API key must start with "AIza"'}
             if len(api_key) < 30:
                 return {'valid': False, 'error': 'Google API key seems too short'}
         
@@ -316,9 +316,9 @@ def validate_step_data(step_number: int, data: Dict[str, Any]) -> List[str]:
             # Validate each configured API key format
             for provider, api_key in data['api_keys'].items():
                 if provider in required_providers and api_key:
-                    if provider == 'gemini' and not api_key.startswith('AIza'):
-                        errors.append("Gemini API key must start with 'AIza'")
-                    elif provider == 'exa':
+                    # if provider == 'gemini' and not api_key.startswith('AIza'):
+                    #     errors.append("Gemini API key must start with 'AIza'")
+                    if provider == 'exa':
                         # Exa API keys are UUIDs (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
                         import re
                         exa_uuid_regex = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
@@ -440,8 +440,8 @@ def validate_api_key_format(provider: str, api_key: str) -> bool:
     if provider == "openai" and not api_key.startswith("sk-"):
         return False
     
-    if provider == "gemini" and not api_key.startswith("AIza"):
-        return False
+    # if provider == "gemini" and not api_key.startswith("AIza"):
+    #     return False
     
     if provider == "anthropic" and not api_key.startswith("sk-ant-"):
         return False
