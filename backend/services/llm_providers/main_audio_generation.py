@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from services.wavespeed.client import WaveSpeedClient
 from utils.logger_utils import get_service_logger
 from .tenant_provider_config import tenant_provider_config_resolver
+from . import supertonic_tts
 
 logger = get_service_logger("audio_generation")
 
@@ -756,6 +757,62 @@ def qwen3_voice_clone(
         )
 
 
+def _map_voice_description_to_supertonic(voice_description: str) -> str:
+    """
+    Map a freeform voice description string to a Supertonic voice style name.
+
+    Supertonic voice styles: F1, F2, F3, F4, M1, M2, M3, M4, U1
+      F* = female, M* = male, U* = unspecified
+      Higher number = more expressive/animated
+
+    This mapper picks the closest match from keywords.
+    """
+    desc = voice_description.lower().strip()
+
+    # Direct name passthrough (user already knows Supertonic voice names)
+    known = {"f1","f2","f3","f4","m1","m2","m3","m4","u1"}
+    if desc in known:
+        return desc.upper()
+
+    # Keyword → voice mapping
+    female_kw = any(w in desc for w in ["woman","female","girl","lady","she","her","feminine","soft","gentle","sweet","warm"])
+    male_kw   = any(w in desc for w in ["man","male","boy","guy","he","him","masculine","deep","strong","rough"])
+    young_kw  = any(w in desc for w in ["young","child","kid","teen","youth","cute"])
+    old_kw    = any(w in desc for w in ["old","elderly","senior","grandma","grandpa","wise","mature"])
+    angry_kw  = any(w in desc for w in ["angry","furious","mad","rage","aggressive"])
+    calm_kw   = any(w in desc for w in ["calm","relaxed","peaceful","serene","gentle","soft"])
+    happy_kw  = any(w in desc for w in ["happy","cheerful","joyful","excited","upbeat","bright"])
+    sad_kw    = any(w in desc for w in ["sad","melancholy","depressed","somber","dark"])
+    narrate_kw = any(w in desc for w in ["narrator","narration","storytelling","documentary","news","professional"])
+    dramatic_kw = any(w in desc for w in ["dramatic","theatrical","cinematic","emotional","expressive"])
+
+    # Decision tree
+    if female_kw:
+        if young_kw:   return "F3"  # young female = more animated
+        if old_kw:     return "F1"  # mature female = calmer
+        if happy_kw:   return "F4"  # happy = most expressive
+        if calm_kw:    return "F1"  # calm female
+        if dramatic_kw: return "F3"
+        return "F2"  # default female
+    elif male_kw:
+        if young_kw:   return "M3"  # young male
+        if old_kw:     return "M1"  # mature male = calmer
+        if angry_kw:   return "M4"  # angry = most expressive
+        if calm_kw:    return "M1"  # calm male
+        if happy_kw:   return "M3"  # happy male
+        if dramatic_kw: return "M3"
+        if narrate_kw: return "M2"  # professional narration
+        return "M2"  # default male
+    else:
+        # No gender detected
+        if young_kw:   return "F3"
+        if narrate_kw: return "M2"
+        if dramatic_kw: return "F3"
+        if happy_kw:   return "F4"
+        if calm_kw:    return "F1"
+        return "U1"  # neutral fallback
+
+
 def qwen3_voice_design(
     text: str,
     voice_description: str,
@@ -763,6 +820,13 @@ def qwen3_voice_design(
     language: str = "auto",
     user_id: Optional[str] = None,
 ) -> VoiceCloneResult:
+    """
+    Voice design: generate speech from text + voice description using Supertonic (on-device).
+
+    Supertonic runs locally on GPU (NVIDIA A16) — no API key needed.
+    voice_description is mapped to a Supertonic voice style name when possible,
+    otherwise falls back to the closest match.
+    """
     try:
         if not user_id:
             raise RuntimeError("user_id is required for subscription checking. Please provide Clerk user ID.")
@@ -775,9 +839,15 @@ def qwen3_voice_design(
             raise ValueError("Voice description is required")
         voice_description = voice_description.strip()
 
+        # Map language code: "auto" → "en" for Supertonic
+        supertonic_lang = language if language and language != "auto" else "en"
+
+        # Map voice_description to Supertonic voice style name
+        voice_name = _map_voice_description_to_supertonic(voice_description)
+
         char_count = len(text)
-        # Pricing logic similar to TTS/Clone
-        estimated_cost = max(0.005, 0.005 * (char_count / 100.0))
+        # Local inference: zero API cost, but track for subscription stats
+        estimated_cost = 0.0
 
         from services.database import get_session_for_user
         from services.subscription import PricingService
@@ -793,7 +863,7 @@ def qwen3_voice_design(
                     user_id=user_id,
                     provider=APIProvider.AUDIO,
                     tokens_requested=char_count,
-                    actual_provider_name="wavespeed",
+                    actual_provider_name="supertonic",
                 )
                 if not can_proceed:
                     raise HTTPException(
@@ -801,7 +871,7 @@ def qwen3_voice_design(
                         detail={
                             "error": message,
                             "message": message,
-                            "provider": "wavespeed",
+                            "provider": "supertonic",
                             "usage_info": usage_info if usage_info else {},
                         },
                     )
@@ -812,15 +882,22 @@ def qwen3_voice_design(
         except Exception as sub_error:
             raise RuntimeError(f"Subscription check failed: {str(sub_error)}")
 
+        # --- Supertonic on-device synthesis (replaces WaveSpeed API call) ---
         import time
         start_time = time.time()
-        client = _get_wavespeed_client(user_id)
-        preview_audio_bytes = client.voice_design(
-            text=text,
-            voice_description=voice_description,
-            language=language
+        wav_bytes, synth_meta = supertonic_tts.synthesize_speech(
+            text,
+            voice_name=voice_name,
+            lang=supertonic_lang,
+            speed=1.05,
         )
         response_time = time.time() - start_time
+        logger.info(
+            f"[qwen3_voice_design] ✅ Supertonic synthesis done: "
+            f"{synth_meta['duration_seconds']}s, {len(wav_bytes)} bytes "
+            f"(voice={synth_meta['voice']}, {response_time:.2f}s wall)"
+        )
+        # --- End Supertonic ---
 
         # Track usage
         try:
@@ -846,7 +923,7 @@ def qwen3_voice_design(
                 if not summary:
                     summary = UsageSummary(user_id=user_id, billing_period=current_period)
                     db_track.add(summary)
-                    db_track.flush()
+                    summary.flush()
 
                 current_calls_before = getattr(summary, "audio_calls", 0) or 0
                 current_cost_before = getattr(summary, "audio_cost", 0.0) or 0.0
@@ -863,7 +940,7 @@ def qwen3_voice_design(
                     "new_calls": new_calls,
                     "new_cost": new_cost,
                     "user_id": user_id,
-                    "period": current_period
+                    "period": current_period,
                 })
 
                 summary.total_cost = (summary.total_cost or 0.0) + float(estimated_cost)
@@ -872,16 +949,16 @@ def qwen3_voice_design(
 
                 actual_provider = detect_actual_provider(
                     provider_enum=APIProvider.AUDIO,
-                    model_name="wavespeed-ai/qwen3-tts/voice-design",
-                    endpoint="/audio-generation/wavespeed/qwen3-tts/voice-design",
+                    model_name="supertonic-3/local",
+                    endpoint="/audio-generation/supertonic",
                 )
 
                 usage_log = APIUsageLog(
                     user_id=user_id,
                     provider=APIProvider.AUDIO,
-                    endpoint="/audio-generation/wavespeed/qwen3-tts/voice-design",
+                    endpoint="/audio-generation/supertonic",
                     method="POST",
-                    model_used="wavespeed-ai/qwen3-tts/voice-design",
+                    model_used="supertonic-3/local",
                     actual_provider_name=actual_provider,
                     tokens_input=char_count,
                     tokens_output=0,
@@ -892,7 +969,7 @@ def qwen3_voice_design(
                     response_time=response_time,
                     status_code=200,
                     request_size=len(text) + len(voice_description),
-                    response_size=len(preview_audio_bytes),
+                    response_size=len(wav_bytes),
                     billing_period=current_period,
                 )
                 db_track.add(usage_log)
@@ -901,12 +978,15 @@ def qwen3_voice_design(
                 clear_dashboard_cache(user_id)
 
                 print(f"""
-[SUBSCRIPTION] Qwen3 Voice Design
+[SUBSCRIPTION] Voice Design (Supertonic Local)
 ├─ User: {user_id}
-├─ Provider: wavespeed
-├─ Model: wavespeed-ai/qwen3-tts/voice-design
+├─ Provider: supertonic (on-device, GPU)
+├─ Model: supertonic-3/local
+├─ Voice: {synth_meta['voice']}
+├─ Lang: {supertonic_lang}
+├─ Duration: {synth_meta['duration_seconds']}s
 ├─ Calls: {current_calls_before} → {new_calls}
-├─ Cost: ${current_cost_before:.4f} → ${new_cost:.4f}
+├─ Cost: $0.00 (local inference)
 ├─ Text chars: {char_count}
 └─ Status: ✅ Allowed & Tracked
 """, flush=True)
@@ -920,11 +1000,11 @@ def qwen3_voice_design(
             logger.error(f"[qwen3_voice_design] ❌ Failed to track usage: {usage_error}", exc_info=True)
 
         return VoiceCloneResult(
-            preview_audio_bytes=preview_audio_bytes,
-            provider="wavespeed",
-            model="wavespeed-ai/qwen3-tts/voice-design",
-            custom_voice_id="", # No persistent ID for design usually, unless we save it
-            file_size=len(preview_audio_bytes),
+            preview_audio_bytes=wav_bytes,
+            provider="supertonic",
+            model=f"supertonic-3/local:{synth_meta['voice']}",
+            custom_voice_id="",
+            file_size=len(wav_bytes),
         )
     except HTTPException:
         raise
@@ -935,11 +1015,10 @@ def qwen3_voice_design(
         raise HTTPException(
             status_code=500,
             detail={
-                "error": "Qwen3 voice design failed",
+                "error": "Voice design failed",
                 "message": str(e),
             },
         )
-
 
 def cosyvoice_voice_clone(
     audio_bytes: bytes,
