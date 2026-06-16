@@ -14,7 +14,7 @@ from .facebook_persona_schemas import (
     FacebookPersonaOptimization
 )
 from .facebook_persona_prompts import FacebookPersonaPrompts
-from services.llm_providers.gemini_provider import gemini_structured_json_response
+from services.llm_providers.main_text_generation import llm_text_gen
 
 
 class FacebookPersonaService:
@@ -40,13 +40,14 @@ class FacebookPersonaService:
             logger.debug("FacebookPersonaService initialized")
             self._initialized = True
     
-    def generate_facebook_persona(self, core_persona: Dict[str, Any], onboarding_data: Dict[str, Any]) -> Dict[str, Any]:
+    def generate_facebook_persona(self, core_persona: Dict[str, Any], onboarding_data: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
         """
-        Generate Facebook-specific persona adaptation using optimized chained prompts.
+        Generate Facebook-specific persona adaptation using provider-agnostic LLM.
         
         Args:
             core_persona: The core persona data
             onboarding_data: User onboarding data
+            user_id: Optional user ID override
             
         Returns:
             Facebook-optimized persona data
@@ -64,17 +65,27 @@ class FacebookPersonaService:
             schema = self._get_enhanced_facebook_schema()
             
             # Extract user_id for tracking
-            user_id = onboarding_data.get("session_info", {}).get("user_id")
+            if not user_id:
+                user_id = onboarding_data.get("session_info", {}).get("user_id")
 
-            # Generate structured response using Gemini with optimized prompts
-            response = gemini_structured_json_response(
+            # Generate structured response using provider-agnostic LLM gateway
+            response = llm_text_gen(
                 prompt=prompt,
-                schema=schema,
-                temperature=0.2,
-                max_tokens=4096,
+                json_struct=schema,
                 system_prompt=system_prompt,
-                user_id=user_id
+                user_id=user_id,
+                flow_type="facebook_persona_generation",
+                max_tokens=4096,
+                temperature=0.2
             )
+
+            # Ensure response is a dict (some providers return JSON strings)
+            if isinstance(response, str):
+                import json
+                try:
+                    response = json.loads(response)
+                except json.JSONDecodeError:
+                    response = {"error": f"Failed to parse LLM response: {response[:200]}"}
 
             if not response or "error" in response:
                 logger.error(f"Failed to generate Facebook persona: {response}")

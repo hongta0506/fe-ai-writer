@@ -1,22 +1,35 @@
 """
 Core Persona Service
 
-Handles the core persona generation logic using Gemini AI.
+Handles the core persona generation logic using provider-agnostic LLM gateway.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from loguru import logger
 from datetime import datetime
 
-from services.llm_providers.gemini_provider import gemini_structured_json_response
+from services.llm_providers.main_text_generation import llm_text_gen
 from .data_collector import OnboardingDataCollector
 from .prompt_builder import PersonaPromptBuilder
 from services.persona.linkedin.linkedin_persona_service import LinkedInPersonaService
 from services.persona.facebook.facebook_persona_service import FacebookPersonaService
 
 
+def _ensure_dict_response(response) -> Dict[str, Any]:
+    """Ensure LLM response is a dict. Some providers return JSON strings."""
+    if isinstance(response, dict):
+        return response
+    if isinstance(response, str):
+        import json
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError:
+            return {"error": f"Failed to parse LLM response as JSON: {response[:200]}"}
+    return {"error": f"Unexpected response type: {type(response).__name__}"}
+
+
 class CorePersonaService:
-    """Core service for generating writing personas using Gemini AI."""
+    """Core service for generating writing personas using provider-agnostic LLM."""
     
     _instance = None
     _initialized = False
@@ -37,8 +50,8 @@ class CorePersonaService:
             logger.debug("CorePersonaService initialized")
             self._initialized = True
     
-    def generate_core_persona(self, onboarding_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate core writing persona using Gemini structured response."""
+    def generate_core_persona(self, onboarding_data: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
+        """Generate core writing persona using provider-agnostic LLM structured response."""
         
         # Build analysis prompt
         prompt = self.prompt_builder.build_persona_analysis_prompt(onboarding_data)
@@ -46,22 +59,26 @@ class CorePersonaService:
         # Get schema for structured response
         persona_schema = self.prompt_builder.get_persona_schema()
         
-        # Extract user_id for tracking
-        user_id = onboarding_data.get("session_info", {}).get("user_id")
+        # Extract user_id from onboarding_data if not provided
+        if not user_id:
+            user_id = onboarding_data.get("session_info", {}).get("user_id")
         
         try:
-            # Generate structured response using Gemini
-            response = gemini_structured_json_response(
+            # Generate structured response using provider-agnostic LLM gateway
+            response = llm_text_gen(
                 prompt=prompt,
-                schema=persona_schema,
-                temperature=0.2,  # Low temperature for consistent analysis
-                max_tokens=8192,
+                json_struct=persona_schema,
                 system_prompt="You are an expert writing style analyst and persona developer. Analyze the provided data to create a precise, actionable writing persona.",
-                user_id=user_id
+                user_id=user_id,
+                flow_type="core_persona_generation",
+                max_tokens=8192,
+                temperature=0.2
             )
             
+            response = _ensure_dict_response(response)
+            
             if "error" in response:
-                logger.error(f"Gemini API error: {response['error']}")
+                logger.error(f"LLM API error: {response['error']}")
                 return {"error": f"AI analysis failed: {response['error']}"}
             
             logger.info("✅ Core persona generated successfully")
@@ -71,7 +88,7 @@ class CorePersonaService:
             logger.error(f"Error generating core persona: {str(e)}")
             return {"error": f"Failed to generate core persona: {str(e)}"}
     
-    def generate_platform_adaptations(self, core_persona: Dict[str, Any], onboarding_data: Dict[str, Any]) -> Dict[str, Any]:
+    def generate_platform_adaptations(self, core_persona: Dict[str, Any], onboarding_data: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
         """Generate platform-specific persona adaptations."""
         
         platforms = ["twitter", "linkedin", "instagram", "facebook", "blog", "medium", "substack", "youtube"]
@@ -79,7 +96,7 @@ class CorePersonaService:
         
         for platform in platforms:
             try:
-                platform_persona = self._generate_single_platform_persona(core_persona, platform, onboarding_data)
+                platform_persona = self._generate_single_platform_persona(core_persona, platform, onboarding_data, user_id=user_id)
                 if "error" not in platform_persona:
                     platform_personas[platform] = platform_persona
                 else:
@@ -89,7 +106,7 @@ class CorePersonaService:
         
         return platform_personas
     
-    def _generate_single_platform_persona(self, core_persona: Dict[str, Any], platform: str, onboarding_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _generate_single_platform_persona(self, core_persona: Dict[str, Any], platform: str, onboarding_data: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
         """Generate persona adaptation for a specific platform."""
         
         # Use LinkedIn service for LinkedIn platform
@@ -98,7 +115,7 @@ class CorePersonaService:
         
         # Use Facebook service for Facebook platform
         if platform.lower() == "facebook":
-            return self.facebook_service.generate_facebook_persona(core_persona, onboarding_data)
+            return self.facebook_service.generate_facebook_persona(core_persona, onboarding_data, user_id=user_id)
         
         # Use generic platform adaptation for other platforms
         platform_constraints = self._get_platform_constraints(platform)
@@ -107,20 +124,22 @@ class CorePersonaService:
         # Get platform-specific schema
         platform_schema = self.prompt_builder.get_platform_schema()
         
-        # Extract user_id for tracking
-        user_id = onboarding_data.get("session_info", {}).get("user_id")
+        # Extract user_id from onboarding_data if not provided
+        if not user_id:
+            user_id = onboarding_data.get("session_info", {}).get("user_id")
         
         try:
-            response = gemini_structured_json_response(
+            response = llm_text_gen(
                 prompt=prompt,
-                schema=platform_schema,
-                temperature=0.2,
-                max_tokens=4096,
+                json_struct=platform_schema,
                 system_prompt=f"You are an expert in {platform} content strategy and platform-specific writing optimization.",
-                user_id=user_id
+                user_id=user_id,
+                flow_type=f"{platform}_persona_generation",
+                max_tokens=4096,
+                temperature=0.2
             )
             
-            return response
+            return _ensure_dict_response(response)
             
         except Exception as e:
             logger.error(f"Error generating {platform} persona: {str(e)}")

@@ -465,6 +465,15 @@ def llm_text_gen(
                     # Non-blocking: log error but don't fail the request
                     logger.error(f"[llm_text_gen] ❌ Failed to track usage: {usage_error}", exc_info=True)
             
+            # When json_struct was requested, ensure response is a dict (some providers return JSON strings)
+            if json_struct and isinstance(response_text, str):
+                try:
+                    import json as _json
+                    response_text = _json.loads(response_text)
+                except (_json.JSONDecodeError, ValueError):
+                    logger.warning("[llm_text_gen] json_struct requested but response is not valid JSON string, wrapping as error")
+                    response_text = {"error": f"LLM returned non-JSON response: {response_text[:200]}"}
+            
             return response_text
         except Exception as provider_error:
             logger.error(f"[llm_text_gen] Provider {gpt_provider} failed: {str(provider_error)}")
@@ -564,6 +573,15 @@ def llm_text_gen(
                             )
                         except Exception as usage_error:
                             logger.error(f"[llm_text_gen] ❌ Failed to track fallback usage: {usage_error}", exc_info=True)
+                    
+                    # When json_struct was requested, ensure response is a dict
+                    if json_struct and isinstance(response_text, str):
+                        try:
+                            import json as _json
+                            response_text = _json.loads(response_text)
+                        except (_json.JSONDecodeError, ValueError):
+                            logger.warning("[llm_text_gen] Fallback: json_struct requested but response is not valid JSON")
+                            response_text = {"error": f"LLM returned non-JSON response: {response_text[:200]}"}
                     
                     return response_text
                 except Exception as fallback_error:

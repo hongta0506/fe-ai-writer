@@ -281,7 +281,8 @@ async def generate_writing_personas(
     Total API calls: 1 + N platforms (vs previous: 1 + N + 1 = N + 2)
     """
     try:
-        logger.info(f"Starting OPTIMIZED persona generation for user: {current_user.get('user_id', 'unknown')}")
+        user_id = _extract_user_id(current_user)
+        logger.info(f"Starting OPTIMIZED persona generation for user: {user_id}")
         
         # Handle both PersonaGenerationRequest and dict inputs
         if isinstance(request, dict):
@@ -296,8 +297,9 @@ async def generate_writing_personas(
         logger.info("Step 1: Generating core persona...")
         core_persona = await asyncio.get_event_loop().run_in_executor(
             None, 
-            core_persona_service.generate_core_persona, 
-            persona_request.onboarding_data
+            lambda: core_persona_service.generate_core_persona(
+                persona_request.onboarding_data, user_id=user_id
+            )
         )
         
         # Add small delay after core persona generation
@@ -328,7 +330,8 @@ async def generate_writing_personas(
                 result = await generate_single_platform_persona_async(
                     core_persona, 
                     platform, 
-                    persona_request.onboarding_data
+                    persona_request.onboarding_data,
+                    user_id=user_id
                 )
                 
                 if isinstance(result, Exception):
@@ -543,8 +546,9 @@ async def execute_persona_generation_task(task_id: str, persona_request: Persona
                 
                 core_persona = await asyncio.get_event_loop().run_in_executor(
                     None, 
-                    core_persona_service.generate_core_persona, 
-                    persona_request.onboarding_data
+                    lambda: core_persona_service.generate_core_persona(
+                        persona_request.onboarding_data, user_id=user_id
+                    )
                 )
                 
                 if "error" in core_persona:
@@ -583,7 +587,8 @@ async def execute_persona_generation_task(task_id: str, persona_request: Persona
                         result = await generate_single_platform_persona_async(
                             core_persona, 
                             platform, 
-                            persona_request.onboarding_data
+                            persona_request.onboarding_data,
+                            user_id=user_id
                         )
                         
                         if isinstance(result, Exception):
@@ -680,7 +685,8 @@ def update_task_status(task_id: str, status: str, progress: int, current_step: s
 async def generate_single_platform_persona_async(
     core_persona: Dict[str, Any],
     platform: str,
-    onboarding_data: Dict[str, Any]
+    onboarding_data: Dict[str, Any],
+    user_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Async wrapper for single platform persona generation.
@@ -688,10 +694,9 @@ async def generate_single_platform_persona_async(
     try:
         return await asyncio.get_event_loop().run_in_executor(
             None,
-            core_persona_service._generate_single_platform_persona,
-            core_persona,
-            platform,
-            onboarding_data
+            lambda: core_persona_service._generate_single_platform_persona(
+                core_persona, platform, onboarding_data, user_id=user_id
+            )
         )
     except Exception as e:
         logger.error(f"Error generating {platform} persona: {str(e)}")
