@@ -138,9 +138,22 @@ class Step3ResearchService:
                     ai_response = llm_text_gen(prompt=prompt, json_struct=schema, user_id=user_id)
                     parsed_res = json.loads(ai_response)
                     
+                    
+                    raw_competitors = parsed_res.get("competitors", [])
+                    mapped_competitors = []
+                    for c in raw_competitors:
+                        mapped_competitors.append({
+                            "url": c.get("url", ""),
+                            "domain": c.get("url", "").replace("https://", "").replace("http://", "").split("/")[0],
+                            "title": c.get("name", ""),
+                            "summary": c.get("description", ""),
+                            "relevance_score": 0.8,
+                            "highlights": c.get("key_features", [])
+                        })
+                        
                     competitor_results = {
                         "success": True,
-                        "competitors": parsed_res.get("competitors", []),
+                        "competitors": mapped_competitors,
                         "api_cost": 0.001
                     }
                     logger.info("Successfully used LLM fallback for competitor discovery.")
