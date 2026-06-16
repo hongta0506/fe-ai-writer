@@ -374,6 +374,34 @@ def llm_text_gen(
                         top_p=top_p,
                         system_prompt=system_instructions
                     )
+            elif gpt_provider == "openai":
+                t0 = time.time()
+                logger.warning(f"[llm_text_gen][{flow_tag}] openai: Starting provider init for user {user_id}")
+                if json_struct:
+                    from services.llm_providers.openai_provider import openai_structured_json_response
+                    t1 = time.time()
+                    response_text = openai_structured_json_response(
+                        prompt=prompt,
+                        schema=json_struct,
+                        model=model or "gpt-4o-mini",
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        system_prompt=system_instructions
+                    )
+                else:
+                    from services.llm_providers.openai_provider import openai_text_response
+                    t1 = time.time()
+                    response_text = openai_text_response(
+                        prompt=prompt,
+                        model=model or "gpt-4o-mini",
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        top_p=top_p,
+                        system_prompt=system_instructions
+                    )
+                api_took_ms = (time.time() - t1) * 1000
+                total_ms = (time.time() - t0) * 1000
+                logger.warning(f"[llm_text_gen][{flow_tag}] openai: user={user_id} api_took={api_took_ms:.0f}ms total={total_ms:.0f}ms")
             elif gpt_provider == "wavespeed":
                 t0 = time.time()
                 logger.warning(f"[llm_text_gen][{flow_tag}] wavespeed: Starting provider init for user {user_id}")
