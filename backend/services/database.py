@@ -60,6 +60,8 @@ _user_engines = {}
 
 def _ensure_daily_workflow_schema(engine, user_id: str) -> None:
     """Backfill required daily_workflow_plans columns for legacy tenant DBs."""
+    if engine.dialect.name != "sqlite":
+        return
     required_columns = {
         "generation_mode": "VARCHAR(30) NOT NULL DEFAULT 'llm_generation'",
         "committee_agent_count": "INTEGER NOT NULL DEFAULT 0",
@@ -268,11 +270,16 @@ def get_engine_for_user(user_id: str):
     if user_id in _user_engines:
         return _user_engines[user_id]
     
-    db_path = get_user_db_path(user_id)
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    
-    database_url = f"sqlite:///{db_path}"
-    
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        engine_cache_key = f"postgres:{database_url}"
+        if engine_cache_key in _user_engines:
+            return _user_engines[engine_cache_key]
+    else:
+        db_path = get_user_db_path(user_id)
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        database_url = f"sqlite:///{db_path}"
+
     engine_kwargs = {
         "echo": False,
         "pool_pre_ping": True,
@@ -280,11 +287,14 @@ def get_engine_for_user(user_id: str):
         "pool_size": int(os.getenv("DB_POOL_SIZE", "20")),
         "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "40")),
         "pool_timeout": int(os.getenv("DB_POOL_TIMEOUT", "30")),
-        "connect_args": {"check_same_thread": False}
     }
-    
+    if database_url.startswith("sqlite"):
+        engine_kwargs["connect_args"] = {"check_same_thread": False}
+
     engine = create_engine(database_url, **engine_kwargs)
     _user_engines[user_id] = engine
+    if os.getenv("DATABASE_URL"):
+        _user_engines[f"postgres:{database_url}"] = engine
 
     # Ensure tables are initialized for this user
     # This runs once per process per user when the engine is created
@@ -303,7 +313,11 @@ def init_user_database(user_id: str):
     """Initialize database tables for a specific user."""
     engine = get_engine_for_user(user_id)
     try:
-        # Create all tables for all models
+        # Create subscription tables first; pricing/status/usage endpoints depend on them.
+        # Keep this before broader metadata groups because some legacy JSON indexes can fail on PostgreSQL.
+        SubscriptionBase.metadata.create_all(bind=engine)
+
+        # Create all other tables for all models
         OnboardingBase.metadata.create_all(bind=engine)
         SEOAnalysisBase.metadata.create_all(bind=engine)
         ContentPlanningBase.metadata.create_all(bind=engine)
@@ -311,7 +325,6 @@ def init_user_database(user_id: str):
         MonitoringBase.metadata.create_all(bind=engine)
         APIMonitoringBase.metadata.create_all(bind=engine)
         PersonaBase.metadata.create_all(bind=engine)
-        SubscriptionBase.metadata.create_all(bind=engine)
         UserBusinessInfoBase.metadata.create_all(bind=engine)
         ContentAssetBase.metadata.create_all(bind=engine)
         BingAnalyticsBase.metadata.create_all(bind=engine)

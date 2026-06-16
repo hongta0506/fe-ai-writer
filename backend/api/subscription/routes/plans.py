@@ -8,7 +8,7 @@ from typing import Dict, Any
 from loguru import logger
 import sqlite3
 
-from services.database import get_db
+from services.database import get_db, get_session_for_user
 from models.subscription_models import SubscriptionPlan
 from services.subscription.schema_utils import ensure_subscription_plan_columns
 from ..utils import format_plan_limits, handle_schema_error
@@ -19,12 +19,23 @@ router = APIRouter()
 
 
 @router.get("/plans")
-async def get_subscription_plans(
-    db: Session = Depends(get_db)
-) -> Dict[str, Any]:
-    """Get all available subscription plans."""
-    
+async def get_subscription_plans() -> Dict[str, Any]:
+    """Get all available subscription plans. Public endpoint for pricing page."""
+    db = get_session_for_user("public")
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database temporarily unavailable")
+
     try:
+        try:
+            from services.subscription.pricing_service import PricingService
+            pricing_service = PricingService(db)
+            pricing_service.initialize_default_pricing()
+            pricing_service.initialize_default_plans()
+            db.commit()
+        except Exception as init_err:
+            logger.warning(f"Default plans initialization skipped/failed: {init_err}")
+            db.rollback()
+
         ensure_subscription_plan_columns(db)
     except Exception as schema_err:
         logger.warning(f"Schema check failed, will retry on query: {schema_err}")

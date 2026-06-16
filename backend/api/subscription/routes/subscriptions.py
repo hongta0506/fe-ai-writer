@@ -272,7 +272,7 @@ async def get_subscription_status(
                         }
                     }
             except Exception as retry_err:
-                logger.error(f"Schema fix and retry failed: {retry_err}", exc_info=True)
+                logger.exception(f"Schema fix and retry failed: {retry_err!r}")
                 return {
                     "success": True,
                     "data": {
@@ -284,7 +284,7 @@ async def get_subscription_status(
                     }
                 }
         
-        logger.error(f"Error getting subscription status: {e}", exc_info=True)
+        logger.exception(f"Error getting subscription status: {e!r}")
         return {
             "success": True,
             "data": {
@@ -292,7 +292,7 @@ async def get_subscription_status(
                 "plan": "none",
                 "tier": "none",
                 "can_use_api": False,
-                "reason": f"Failed to check subscription status: {str(e)}"
+                "reason": f"Failed to check subscription status: {repr(e)}"
             }
         }
 

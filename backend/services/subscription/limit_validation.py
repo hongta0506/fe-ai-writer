@@ -173,62 +173,56 @@ class LimitValidator:
                 sql_query = text("SELECT * FROM usage_summaries WHERE user_id = :user_id AND billing_period = :period LIMIT 1")
                 result = self.db.execute(sql_query, {'user_id': user_id, 'period': current_period}).first()
                 if result:
-                    # Map result to UsageSummary object
+                    usage = self.db.query(UsageSummary).filter(
+                        UsageSummary.user_id == user_id,
+                        UsageSummary.billing_period == current_period
+                    ).first()
+                else:
+                    usage = None
+            except Exception as sql_error:
+                logger.debug(f"[Subscription Check] Raw SQL query failed, using ORM: {sql_error}")
+                try:
+                    usage = self.db.query(UsageSummary).filter(
+                        UsageSummary.user_id == user_id,
+                        UsageSummary.billing_period == current_period
+                    ).first()
+                except Exception as e:
+                    logger.error(f"Error getting usage summary for {user_id}: {e}")
+                    self.db.rollback()
+                    return False, f"Failed to retrieve usage summary: {str(e)}", {}
+
+            if usage:
+                self.db.refresh(usage)
+            else:
+                # First usage this period, create summary. Raw SQL SELECT can succeed with no rows;
+                # without this creation path, later limit checks crash on usage.gemini_calls.
+                try:
+                    try:
+                        insert_sql = text("""
+                            INSERT INTO usage_summaries (user_id, billing_period, created_at, updated_at)
+                            VALUES (:user_id, :period, datetime('now'), datetime('now'))
+                        """)
+                        self.db.execute(insert_sql, {'user_id': user_id, 'period': current_period})
+                        self.db.commit()
+                    except Exception as sql_insert_error:
+                        logger.debug(f"[Subscription Check] Direct SQL insert failed, trying ORM: {sql_insert_error}")
+                        self.db.rollback()
+                        usage = UsageSummary(user_id=user_id, billing_period=current_period)
+                        self.db.add(usage)
+                        self.db.commit()
+
                     usage = self.db.query(UsageSummary).filter(
                         UsageSummary.user_id == user_id,
                         UsageSummary.billing_period == current_period
                     ).first()
                     if usage:
-                        self.db.refresh(usage)  # Ensure fresh data
-            except Exception as sql_error:
-                logger.debug(f"[Subscription Check] Raw SQL query failed, using ORM: {sql_error}")
-                # Fallback to ORM query
-                usage = self.db.query(UsageSummary).filter(
-                    UsageSummary.user_id == user_id,
-                    UsageSummary.billing_period == current_period
-                ).first()
-                if usage:
-                    self.db.refresh(usage)  # Ensure fresh data
-                
-                if not usage:
-                    # First usage this period, create summary
-                    try:
-                        # Try to create with minimal fields first to avoid missing column errors
-                        from sqlalchemy import text
-                        try:
-                            # Insert with only essential fields
-                            insert_sql = text("""
-                                INSERT INTO usage_summaries (user_id, billing_period, created_at, updated_at)
-                                VALUES (:user_id, :period, datetime('now'), datetime('now'))
-                            """)
-                            self.db.execute(insert_sql, {'user_id': user_id, 'period': current_period})
-                            self.db.commit()
-                            
-                            # Now fetch the created record
-                            usage = self.db.query(UsageSummary).filter(
-                                UsageSummary.user_id == user_id,
-                                UsageSummary.billing_period == current_period
-                            ).first()
-                            
-                        except Exception as sql_error:
-                            logger.debug(f"[Subscription Check] Direct SQL insert failed, trying ORM: {sql_error}")
-                            # Fallback to ORM creation
-                            usage = UsageSummary(
-                                user_id=user_id,
-                                billing_period=current_period
-                            )
-                            self.db.add(usage)
-                            self.db.commit()
-                    except Exception as create_error:
-                        logger.error(f"Error creating usage summary: {create_error}")
-                        self.db.rollback()
-                        # STRICT: Fail closed on DB error
-                        return False, f"Failed to create usage summary: {str(create_error)}", {}
-            except Exception as e:
-                logger.error(f"Error getting usage summary for {user_id}: {e}")
-                self.db.rollback()
-                # STRICT: Fail closed on DB error
-                return False, f"Failed to retrieve usage summary: {str(e)}", {}
+                        self.db.refresh(usage)
+                    else:
+                        return False, "Failed to create usage summary: record not found after insert", {}
+                except Exception as create_error:
+                    logger.error(f"Error creating usage summary: {create_error}")
+                    self.db.rollback()
+                    return False, f"Failed to create usage summary: {str(create_error)}", {}
             
             # Check call limits with error handling
             # NOTE: call_limit = 0 means UNLIMITED (Enterprise plans)

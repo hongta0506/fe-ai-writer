@@ -1,12 +1,18 @@
 from typing import Set
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text, inspect
 from loguru import logger
 
 
 _checked_subscription_plan_columns: bool = False
 _checked_usage_summaries_columns: bool = False
 _checked_api_usage_logs_columns: bool = False
+
+
+def _get_table_columns(db: Session, table_name: str) -> Set[str]:
+    """Return column names for SQLite/PostgreSQL/MySQL using SQLAlchemy inspector."""
+    inspector = inspect(db.get_bind())
+    return {col["name"] for col in inspector.get_columns(table_name)}
 
 
 def ensure_subscription_plan_columns(db: Session) -> None:
@@ -21,9 +27,8 @@ def ensure_subscription_plan_columns(db: Session) -> None:
         return
 
     try:
-        # Discover existing columns using PRAGMA
-        result = db.execute(text("PRAGMA table_info(subscription_plans)"))
-        cols: Set[str] = {row[1] for row in result}
+        # Discover existing columns using dialect-safe SQLAlchemy inspector
+        cols: Set[str] = _get_table_columns(db, "subscription_plans")
         
         logger.debug(f"Schema check: Found {len(cols)} columns in subscription_plans table")
 
@@ -55,7 +60,7 @@ def ensure_subscription_plan_columns(db: Session) -> None:
         # Only set flag if we successfully completed the check
         _checked_subscription_plan_columns = True
     except Exception as e:
-        logger.error(f"Error ensuring subscription_plan columns: {e}", exc_info=True)
+        logger.exception(f"Error ensuring subscription_plan columns: {e!r}")
         db.rollback()
         # Don't set the flag if there was an error, so we retry next time
         _checked_subscription_plan_columns = False
@@ -74,9 +79,8 @@ def ensure_usage_summaries_columns(db: Session) -> None:
         return
 
     try:
-        # Discover existing columns using PRAGMA
-        result = db.execute(text("PRAGMA table_info(usage_summaries)"))
-        cols: Set[str] = {row[1] for row in result}
+        # Discover existing columns using dialect-safe SQLAlchemy inspector
+        cols: Set[str] = _get_table_columns(db, "usage_summaries")
         
         logger.debug(f"Schema check: Found {len(cols)} columns in usage_summaries table")
 
@@ -113,7 +117,7 @@ def ensure_usage_summaries_columns(db: Session) -> None:
         # Only set flag if we successfully completed the check
         _checked_usage_summaries_columns = True
     except Exception as e:
-        logger.error(f"Error ensuring usage_summaries columns: {e}", exc_info=True)
+        logger.exception(f"Error ensuring usage_summaries columns: {e!r}")
         db.rollback()
         # Don't set the flag if there was an error, so we retry next time
         _checked_usage_summaries_columns = False
@@ -132,9 +136,8 @@ def ensure_api_usage_logs_columns(db: Session) -> None:
         return
     
     try:
-        # Discover existing columns using PRAGMA
-        result = db.execute(text("PRAGMA table_info(api_usage_logs)"))
-        cols: Set[str] = {row[1] for row in result}
+        # Discover existing columns using dialect-safe SQLAlchemy inspector
+        cols: Set[str] = _get_table_columns(db, "api_usage_logs")
         
         logger.debug(f"Schema check: Found {len(cols)} columns in api_usage_logs table")
         
@@ -161,7 +164,7 @@ def ensure_api_usage_logs_columns(db: Session) -> None:
         # Only set flag if we successfully completed the check
         _checked_api_usage_logs_columns = True
     except Exception as e:
-        logger.error(f"Error ensuring api_usage_logs columns: {e}", exc_info=True)
+        logger.exception(f"Error ensuring api_usage_logs columns: {e!r}")
         db.rollback()
         # Don't set the flag if there was an error, so we retry next time
         _checked_api_usage_logs_columns = False

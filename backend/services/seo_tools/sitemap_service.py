@@ -302,6 +302,21 @@ class SitemapService:
             except Exception:
                 pass
             
+            # Some dynamic sitemaps can be temporarily truncated while being generated.
+            # Recover URL list from <loc> tags so website analysis can continue with a warning
+            # instead of failing the whole sitemap step.
+            recovered_urls = []
+            if "content" in locals():
+                for loc in re.findall(r"<loc>\s*([^<]+?)\s*</loc>", content, flags=re.IGNORECASE):
+                    loc = loc.strip()
+                    if loc.startswith(("http://", "https://")):
+                        recovered_urls.append({"loc": loc})
+            if recovered_urls:
+                logger.warning(
+                    f"Failed to parse sitemap XML: {e}; recovered {len(recovered_urls)} URLs from <loc> tags"
+                )
+                return {"urls": recovered_urls[:10000], "sitemaps": [], "total_urls": len(recovered_urls[:10000])}
+
             logger.warning(f"Failed to parse sitemap XML: {e}")
             raise Exception(f"Failed to parse sitemap XML: {e}")
         except Exception as e:

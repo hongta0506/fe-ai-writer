@@ -89,10 +89,10 @@ _log_memory_usage()
 logger.info("app.py: Early memory checkpoint after env load")
 
 
-# Import modular utilities (skip OnboardingManager import in feature-only modes)
+# Import modular utilities (skip OnboardingManager import unless full/onboarding mode)
 from alwrity_utils import HealthChecker, RateLimiter, FrontendServing, RouterManager
-if _is_full_mode():
-    from alwrity_utils import OnboardingManager
+if _is_full_mode() or _is_feature_enabled("onboarding"):
+    from alwrity_utils.onboarding_manager import OnboardingManager
 
 # Skip monitoring middleware in feature-only modes to save memory
 if _is_full_mode():
@@ -316,9 +316,9 @@ router_manager = RouterManager(app)
 router_group_status: Dict[str, Dict[str, Any]] = {}
 
 onboarding_manager = None
-# Only create OnboardingManager in full mode
-if _is_full_mode():
-    from alwrity_utils import OnboardingManager
+# Only create OnboardingManager in full/onboarding mode
+if _is_full_mode() or _is_feature_enabled("onboarding"):
+    from alwrity_utils.onboarding_manager import OnboardingManager
     onboarding_manager = OnboardingManager(app)
 
 # Middleware Order (FastAPI executes in REVERSE order of registration - LIFO):
@@ -833,8 +833,8 @@ async def startup_event():
 
 def _assert_router_mounted(router_name: str) -> None:
     """Assert that a critical router is mounted. Fails startup if not found."""
-    from fastapi import routing
-    mounted_routes = [route.path for route in app.routes]
+    mounted_routes = [getattr(route, "path", "") for route in app.routes]
+    mounted_routes = [path for path in mounted_routes if path]
     
     # Check for router-specific paths
     router_path_indicators = {

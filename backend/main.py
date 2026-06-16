@@ -158,6 +158,12 @@ default_allowed_origins = [
     "http://localhost:8000",  # Backend dev server
     "http://localhost:3001",  # Alternative React port
     "https://alwrity-ai.vercel.app",  # Vercel frontend
+    "https://bipage.net",  # BiPage main
+    "https://www.bipage.net",  # BiPage www
+    "https://writer-fe.bipage.net",  # BiPage writer frontend
+    "https://writer-be.bipage.net",  # BiPage writer backend
+    "https://ad.bipage.net",  # BiPage admin
+    "https://api.bipage.net",  # BiPage API
 ]
 
 # Optional dynamic origins from environment (comma-separated)
