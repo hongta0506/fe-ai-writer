@@ -170,6 +170,8 @@ def llm_text_gen(
             available_providers.append("huggingface")
         if api_key_manager.get_api_key("wavespeed"):
             available_providers.append("wavespeed")
+        if api_key_manager.get_api_key("openai") or os.getenv("OPENAI_API_KEY"):
+            available_providers.append("openai")
         
         logger.warning(
             f"[llm_text_gen][{flow_tag}] Provider preflight: env_provider='{env_provider or 'auto'}', "
@@ -613,7 +615,7 @@ def llm_text_gen(
 
 def check_gpt_provider(gpt_provider: str) -> bool:
     """Check if the specified GPT provider is supported."""
-    supported_providers = ["google", "huggingface"]
+    supported_providers = ["google", "huggingface", "wavespeed", "openai"]
     return gpt_provider in supported_providers
 
 def get_api_key(gpt_provider: str, user_id: Optional[str] = None) -> Optional[str]:
