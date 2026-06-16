@@ -109,6 +109,17 @@ def get_gemini_api_key() -> str:
         error_msg = "GEMINI_API_KEY appears to be too short. Please check your API credentials."
         logger.error(error_msg)
         raise ValueError(error_msg)
+
+    # Reject obvious placeholder / template values
+    _placeholder_markers = ('your_', 'placeholder', 'xxx', 'todo', 'change_me', 'insert_', 'example', 'test_key')
+    lower_key = api_key.strip().lower()
+    if any(marker in lower_key for marker in _placeholder_markers):
+        error_msg = (
+            "GEMINI_API_KEY contains a placeholder value. "
+            "Please provide a real API key via the onboarding UI or environment variable."
+        )
+        logger.error(error_msg)
+        raise ValueError(error_msg)
     
     return api_key.strip()
 

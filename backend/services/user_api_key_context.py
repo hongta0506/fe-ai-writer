@@ -2,8 +2,10 @@
 User API Key Context Manager
 Provides user-specific API keys to backend services.
 
-In development: Uses .env file
-In production: Fetches from database per user
+Resolution order (production & local):
+  1. PostgreSQL via OnboardingDataIntegrationService
+  2. os.environ (set by frontend's APIKeyManager.save_api_key during session)
+  3. .env file (fallback)
 """
 
 import os
@@ -34,19 +36,41 @@ class UserAPIKeyContext:
         self._is_local = os.getenv('DEPLOY_ENV', 'local') == 'local'
     
     def __enter__(self):
-        """Load API keys when entering context."""
-        if self._is_local:
-            # Local mode: Use .env file
-            self.keys = self._load_from_env()
-            logger.debug(f"[LOCAL] Loaded API keys from .env file")
-        elif self.user_id:
-            # Production mode: Fetch from database
-            self.keys = self._load_from_database(self.user_id)
-            logger.debug(f"[PRODUCTION] Loaded API keys from database for user {self.user_id}")
-        else:
-            logger.warning("No user_id provided in production mode - using empty keys")
-            self.keys = {}
-        
+        """Load API keys when entering context.
+
+        Priority:
+          1. PostgreSQL (OnboardingDataIntegrationService) when user_id provided
+          2. os.environ (set at runtime by APIKeyManager during onboarding session)
+          3. .env file (absolute fallback)
+        """
+        keys: Dict[str, str] = {}
+
+        # Step 1: Try database (works in ALL environments when user_id available)
+        if self.user_id:
+            keys = self._load_from_database(self.user_id)
+            if keys:
+                logger.debug(f"[DB] Loaded {len(keys)} API keys from database for user {self.user_id}")
+                self.keys = keys
+                return self.keys
+
+        # Step 2: os.environ (set by frontend's APIKeyManager during active session)
+        env_keys = self._load_from_env()
+        if any(env_keys.values()):
+            logger.debug(f"[ENV] Loaded {sum(1 for v in env_keys.values() if v)} API keys from environment")
+            keys = env_keys
+
+        # Step 3: .env file (fallback)
+        if not any(keys.values()):
+            from dotenv import load_dotenv
+            from pathlib import Path
+            backend_dir = Path(__file__).resolve().parent.parent
+            env_path = backend_dir / '.env'
+            if env_path.exists():
+                load_dotenv(env_path, override=True)
+                keys = self._load_from_env()
+                logger.debug(f"[DOTENV] Loaded {sum(1 for v in keys.values() if v)} API keys from .env file")
+
+        self.keys = keys
         return self.keys
     
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -68,20 +92,47 @@ class UserAPIKeyContext:
         }
     
     def _load_from_database(self, user_id: str) -> Dict[str, str]:
-        """Load API keys from database for specific user."""
+        """Load API keys from database for specific user.
+
+        Reads from ``api_keys`` table via ``onboarding_sessions.user_id`` join.
+        Columns: id, session_id, provider, key, created_at, updated_at.
+        """
         try:
-            from api.content_planning.services.content_strategy.onboarding import OnboardingDataIntegrationService
             from services.database import get_session_for_user
-            
-            integration_service = OnboardingDataIntegrationService()
+            from models.onboarding import OnboardingSession, APIKey
+
             db = get_session_for_user(user_id)
             if not db:
                 logger.error(f"Failed to create DB session for user {user_id}")
                 return {}
             try:
-                integrated_data = integration_service.get_integrated_data_sync(user_id, db)
-                keys = integrated_data.get('api_keys_data', {})
-                logger.info(f"Loaded {len(keys)} API keys from database (SSOT) for user {user_id}")
+                # Find the latest onboarding session for this user
+                session = db.query(OnboardingSession).filter(
+                    OnboardingSession.user_id == user_id
+                ).order_by(OnboardingSession.updated_at.desc()).first()
+
+                if not session:
+                    logger.info(f"No onboarding session for user {user_id}")
+                    return {}
+
+                # Query api_keys via session_id (actual schema: session_id, provider, key)
+                rows = db.query(APIKey).filter(
+                    APIKey.session_id == session.id
+                ).all()
+
+                keys: Dict[str, str] = {}
+                for row in rows:
+                    if row.key and row.provider:
+                        keys[row.provider.lower()] = row.key
+
+                if keys:
+                    logger.info(
+                        f"[DB] Loaded {len(keys)} API keys from database "
+                        f"for user {user_id} (providers: {list(keys.keys())})"
+                    )
+                else:
+                    logger.info(f"No API keys in DB for user {user_id}")
+
                 return keys
             finally:
                 db.close()
