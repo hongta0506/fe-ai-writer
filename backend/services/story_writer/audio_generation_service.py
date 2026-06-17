@@ -330,6 +330,7 @@ class StoryAudioGenerationService:
         channel: Optional[str] = None,
         format: Optional[str] = None,
         language_boost: Optional[str] = None,
+        audio_provider: Optional[str] = None,
         enable_sync_mode: Optional[bool] = True,
         db: Optional[Session] = None,
     ) -> Dict[str, Any]:
@@ -378,6 +379,7 @@ class StoryAudioGenerationService:
                 channel=channel,
                 format=format,
                 language_boost=language_boost,
+                audio_provider=audio_provider,
                 enable_sync_mode=enable_sync_mode,
             )
             

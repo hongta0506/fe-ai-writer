@@ -647,6 +647,7 @@ export const podcastApi = {
     useVoiceClone?: boolean;
     voiceSampleUrl?: string;
     voiceCloneEngine?: string;
+    audioProvider?: string;
     emotion?: string; // Fallback if scene doesn't have emotion
     speed?: number;
     volume?: number;
@@ -731,7 +732,7 @@ export const podcastApi = {
       provider: "audio",
       operation_type: "tts_full_render",
       tokens_requested: textToUse.length,
-      actual_provider_name: "wavespeed",
+      actual_provider_name: params.audioProvider || "wavespeed",
     });
 
     const response = await aiApiClient.post("/api/podcast/audio", {
@@ -743,6 +744,7 @@ export const podcastApi = {
       use_voice_clone: params.useVoiceClone || false,
       voice_sample_url: params.voiceSampleUrl || null,
       voice_clone_engine: params.voiceCloneEngine || null,
+      audio_provider: params.audioProvider || null,
       speed: params.speed ?? 1.0,
       volume: params.volume ?? 1.0,
       pitch: params.pitch ?? 0.0,

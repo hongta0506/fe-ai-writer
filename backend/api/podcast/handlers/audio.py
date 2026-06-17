@@ -418,6 +418,7 @@ async def generate_podcast_audio(
                 channel=request.channel,
                 format=request.format,
                 language_boost=request.language_boost,
+                audio_provider=request.audio_provider,
                 enable_sync_mode=request.enable_sync_mode,
             )
             

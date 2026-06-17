@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from services.wavespeed.client import WaveSpeedClient
 from utils.logger_utils import get_service_logger
 from .tenant_provider_config import tenant_provider_config_resolver
+from .audio_provider import AudioProviderFactory
 from . import supertonic_tts
 
 logger = get_service_logger("audio_generation")
@@ -129,7 +130,7 @@ def generate_audio(
                     user_id=user_id,
                     provider=APIProvider.AUDIO,
                     tokens_requested=character_count,  # Use character count as "tokens" for audio
-                    actual_provider_name="wavespeed"  # Actual provider is WaveSpeed
+                    actual_provider_name=(kwargs.get("provider") or kwargs.get("audio_provider") or "wavespeed")
                 )
                 
                 if not can_proceed:
@@ -159,20 +160,17 @@ def generate_audio(
             logger.error(f"[audio_gen] Subscription check failed for user {user_id}: {sub_error}")
             raise RuntimeError(f"Subscription check failed: {str(sub_error)}")
         
-        # Generate audio using WaveSpeed
+        # Generate audio through common provider wrapper
         try:
-            # Avoid passing duplicate enable_sync_mode; allow override via kwargs
-            enable_sync_mode = kwargs.pop("enable_sync_mode", True)
-
-            # Filter out None values from kwargs to prevent WaveSpeed validation errors
             filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
-            logger.info(f"[audio_gen] Filtered kwargs (removed None values): {filtered_kwargs}")
+            provider_name = (filtered_kwargs.pop("provider", None) or filtered_kwargs.pop("audio_provider", None) or "wavespeed")
+            model_name = filtered_kwargs.get("model") or filtered_kwargs.get("audio_tts_model")
+            logger.info(f"[audio_gen] Provider={provider_name}, model={model_name or 'default'}, kwargs={filtered_kwargs}")
 
-            # Track response time
             import time
             start_time = time.time()
-            client = _get_wavespeed_client(user_id)
-            audio_bytes = client.generate_speech(
+            provider = AudioProviderFactory.get(provider=provider_name, model=model_name)
+            provider_result = provider.synthesize(
                 text=text,
                 voice_id=voice_id,
                 custom_voice_id=custom_voice_id,
@@ -180,17 +178,20 @@ def generate_audio(
                 volume=volume,
                 pitch=pitch,
                 emotion=emotion,
-                enable_sync_mode=enable_sync_mode,
-                **filtered_kwargs
+                user_id=user_id,
+                **filtered_kwargs,
             )
+            audio_bytes = provider_result.audio_bytes
+            actual_provider_name = provider_result.provider
+            actual_model_name = provider_result.model
             response_time = time.time() - start_time
             
-            logger.info(f"[audio_gen] ✅ API call successful, generated {len(audio_bytes)} bytes in {response_time:.2f}s")
+            logger.info(f"[audio_gen] ✅ Provider call successful: {actual_provider_name}/{actual_model_name}, generated {len(audio_bytes)} bytes in {response_time:.2f}s")
             
         except HTTPException:
             raise
         except Exception as api_error:
-            logger.error(f"[audio_gen] Audio generation API failed: {api_error}")
+            logger.error(f"[audio_gen] Audio generation provider failed: {api_error}")
             raise HTTPException(
                 status_code=502,
                 detail={
@@ -264,19 +265,15 @@ def generate_audio(
                     
                     # Detect actual provider name (WaveSpeed, Google, OpenAI, etc.)
                     from services.subscription.provider_detection import detect_actual_provider
-                    actual_provider = detect_actual_provider(
-                        provider_enum=APIProvider.AUDIO,
-                        model_name="minimax/speech-02-hd",
-                        endpoint="/audio-generation/wavespeed"
-                    )
+                    actual_provider = actual_provider_name
                     
                     usage_log = APIUsageLog(
                         user_id=user_id,
                         provider=APIProvider.AUDIO,
-                        endpoint="/audio-generation/wavespeed",
+                        endpoint=f"/audio-generation/{actual_provider_name}",
                         method="POST",
-                        model_used="minimax/speech-02-hd",
-                        actual_provider_name=actual_provider,  # Track actual provider (WaveSpeed, etc.)
+                        model_used=actual_model_name,
+                        actual_provider_name=actual_provider,  # Track actual provider (WaveSpeed, Supertonic, etc.)
                         tokens_input=character_count,
                         tokens_output=0,
                         tokens_total=character_count,
@@ -317,9 +314,9 @@ def generate_audio(
 [SUBSCRIPTION] Audio Generation
 ├─ User: {user_id}
 ├─ Plan: {plan_name} ({tier})
-├─ Provider: wavespeed
-├─ Actual Provider: wavespeed
-├─ Model: minimax/speech-02-hd
+├─ Provider: {actual_provider_name}
+├─ Actual Provider: {actual_provider}
+├─ Model: {actual_model_name}
 ├─ Voice: {voice_id}
 ├─ Calls: {current_calls_before} → {new_calls} / {audio_limit_display}
 ├─ Cost: ${current_cost_before:.4f} → ${new_cost:.4f}
@@ -341,8 +338,8 @@ def generate_audio(
         
         return AudioGenerationResult(
             audio_bytes=audio_bytes,
-            provider="wavespeed",
-            model="minimax/speech-02-hd",
+            provider=actual_provider_name,
+            model=actual_model_name,
             voice_id=voice_id,
             text_length=character_count,
             file_size=len(audio_bytes),

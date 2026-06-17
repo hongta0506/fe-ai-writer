@@ -234,6 +234,7 @@ class PodcastAudioRequest(BaseModel):
     use_voice_clone: Optional[bool] = False  # If True, use voice clone with voice_sample_url
     voice_sample_url: Optional[str] = None  # URL to user's voice sample for cloning
     voice_clone_engine: Optional[str] = None  # Engine: "qwen3", "minimax", "cosyvoice"
+    audio_provider: Optional[str] = None  # TTS provider: "wavespeed" or "supertonic"
     speed: Optional[float] = 1.0
     volume: Optional[float] = 1.0
     pitch: Optional[float] = 0.0
