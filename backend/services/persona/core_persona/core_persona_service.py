@@ -111,7 +111,7 @@ class CorePersonaService:
         
         # Use LinkedIn service for LinkedIn platform
         if platform.lower() == "linkedin":
-            return self.linkedin_service.generate_linkedin_persona(core_persona, onboarding_data)
+            return self.linkedin_service.generate_linkedin_persona(core_persona, onboarding_data, user_id=user_id)
         
         # Use Facebook service for Facebook platform
         if platform.lower() == "facebook":

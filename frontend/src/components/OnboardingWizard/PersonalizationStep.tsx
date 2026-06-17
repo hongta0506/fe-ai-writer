@@ -418,7 +418,8 @@ const PersonalizationStep: React.FC<PersonalizationStepProps> = ({
 
   useEffect(() => {
     const hasValidData = !!(corePersona && platformPersonas && Object.keys(platformPersonas).length > 0 && qualityMetrics);
-    const isComplete = !isGenerating && hasValidData && generationStep === 'preview' && brandAvatarSet && voiceCloneSet;
+    // Brand Avatar and Voice Clone are optional. Step 4 can continue once text persona is ready.
+    const isComplete = !isGenerating && hasValidData && generationStep === 'preview';
     
     if (onValidationChange) {
       onValidationChange(isComplete);

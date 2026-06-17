@@ -521,6 +521,7 @@ async def execute_persona_generation_task(task_id: str, persona_request: Persona
         user_id = _extract_user_id(current_user)
         env_mapping = {
             'gemini': 'GEMINI_API_KEY',
+            'wavespeed': 'WAVESPEED_API_KEY',
             'exa': 'EXA_API_KEY',
             'openai': 'OPENAI_API_KEY',
             'anthropic': 'ANTHROPIC_API_KEY',

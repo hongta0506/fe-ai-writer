@@ -179,6 +179,7 @@ def track_agent_usage_sync(user_id: str, model_name: str, prompt: str, response_
                 })
             except Exception as log_e:
                 logger.error(f"[AgentTracking] Failed to insert usage log: {log_e}")
+                db.rollback()
 
             if cost_total > 0:
                 update_costs_query = text(f"""

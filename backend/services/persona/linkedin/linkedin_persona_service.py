@@ -32,13 +32,14 @@ class LinkedInPersonaService:
             logger.debug("LinkedInPersonaService initialized")
             self._initialized = True
     
-    def generate_linkedin_persona(self, core_persona: Dict[str, Any], onboarding_data: Dict[str, Any]) -> Dict[str, Any]:
+    def generate_linkedin_persona(self, core_persona: Dict[str, Any], onboarding_data: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Generate LinkedIn-specific persona adaptation using optimized chained prompts.
         
         Args:
             core_persona: The core writing persona
             onboarding_data: User's onboarding data
+            user_id: Optional user ID for API key resolution
             
         Returns:
             LinkedIn-optimized persona data
@@ -56,7 +57,8 @@ class LinkedInPersonaService:
             schema = self.schemas.get_enhanced_linkedin_schema()
             
             # Extract user_id for tracking
-            user_id = onboarding_data.get("session_info", {}).get("user_id")
+            if not user_id:
+                user_id = onboarding_data.get("session_info", {}).get("user_id")
             
             # Generate structured response using provider-agnostic gateway
             response = llm_text_gen(
