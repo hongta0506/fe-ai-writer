@@ -32,6 +32,7 @@ import {
   // Platform Icons
   Web as WordPressIcon,
   Web as WixIcon,
+  Api as ApiIcon,
   Google as GoogleIcon,
   Analytics as AnalyticsIcon,
   // UI Icons
@@ -51,8 +52,10 @@ import ComingSoonSection from './common/ComingSoonSection';
 import { useWordPressOAuth } from '../../hooks/useWordPressOAuth';
 import { useWixConnection } from '../../hooks/useWixConnection';
 import { useBingOAuth } from '../../hooks/useBingOAuth';
+import { useCustomApiConnection } from '../../hooks/useCustomApiConnection';
 import { useGSCConnection } from './common/useGSCConnection';
 import { usePlatformConnections } from './common/usePlatformConnections';
+import { CustomApiConnectDialog } from './common/CustomApiConnectDialog';
 import PlatformAnalytics from '../shared/PlatformAnalytics';
 import { cachedAnalyticsAPI } from '../../api/cachedAnalytics';
 
@@ -115,6 +118,17 @@ const IntegrationsStep: React.FC<IntegrationsStepProps> = ({ onContinue, updateH
   // Initialize integrations data
   const [integrations] = useState<IntegrationPlatform[]>([
     // Website Platforms
+    {
+      id: 'custom_api',
+      name: 'Custom API / Webhook',
+      description: 'Connect your custom website via REST API webhook to receive content',
+      icon: <ApiIcon />,
+      category: 'website',
+      status: 'available',
+      features: ['Auto-publish content', 'Custom payload mapping'],
+      benefits: ['Publish to any custom CMS', 'Flexible integration'],
+      isEnabled: true
+    },
     {
       id: 'wix',
       name: 'Wix',
@@ -334,6 +348,8 @@ const IntegrationsStep: React.FC<IntegrationsStepProps> = ({ onContinue, updateH
       } catch (error) {
         console.error('Bing connection failed:', error);
       }
+    } else if (platformId === 'custom_api') {
+      setCustomApiDialogOpen(true);
     } else {
       await handleConnect(platformId);
     }
@@ -350,7 +366,21 @@ const IntegrationsStep: React.FC<IntegrationsStepProps> = ({ onContinue, updateH
   
   // Get sites from hooks for the memo
   const { sites: wixSites, connected: wixConnected } = useWixConnection();
-  
+  const { sites: customApiSites, connected: customApiConnected, connect: connectCustomApi, disconnect: disconnectCustomApi } = useCustomApiConnection();
+  const [customApiDialogOpen, setCustomApiDialogOpen] = useState(false);
+
+  // Sync Custom API connections
+  useEffect(() => {
+    if (customApiConnected && customApiSites.length > 0) {
+      if (!connectedPlatforms.includes('custom_api')) {
+        setConnectedPlatforms(prev => [...prev, 'custom_api']);
+      }
+    } else if (!customApiConnected && connectedPlatforms.includes('custom_api')) {
+      setConnectedPlatforms(prev => prev.filter(platform => platform !== 'custom_api'));
+    }
+  }, [customApiConnected, customApiSites, connectedPlatforms, setConnectedPlatforms]);
+
+
   const availableSites = React.useMemo(() => {
     const sites: { url: string; source: string; name: string }[] = [];
     
@@ -363,15 +393,23 @@ const IntegrationsStep: React.FC<IntegrationsStepProps> = ({ onContinue, updateH
     }
     
     if (wordpressConnected && wordpressSites.length > 0) {
-      sites.push(...wordpressSites.map(s => ({ 
-        url: s.blog_url, 
+      sites.push(...wordpressSites.map(s => ({
+        url: s.blog_url,
         source: 'WordPress',
         name: 'WordPress Site'
       })));
     }
-    
+
+    if (customApiConnected && customApiSites.length > 0) {
+      sites.push(...customApiSites.map(s => ({
+        url: s.endpoint_url,
+        source: 'Custom API',
+        name: s.name
+      })));
+    }
+
     return sites;
-  }, [wixConnected, wixSites, wordpressConnected, wordpressSites]);
+  }, [wixConnected, wixSites, wordpressConnected, wordpressSites, customApiConnected, customApiSites]);
 
   useEffect(() => {
     if (!onDataChange) {
@@ -381,6 +419,7 @@ const IntegrationsStep: React.FC<IntegrationsStepProps> = ({ onContinue, updateH
     const websiteIntegrations = {
       wix: wixConnected ? wixSites.map(s => ({ url: s.blog_url, name: 'Wix Site' })) : [],
       wordpress: wordpressConnected ? wordpressSites.map(s => ({ url: s.blog_url, name: 'WordPress Site' })) : [],
+      custom_api: customApiConnected ? customApiSites.map(s => ({ url: s.endpoint_url, name: s.name })) : [],
       primaryWebsite: primarySite || null,
     };
 
@@ -483,6 +522,11 @@ const IntegrationsStep: React.FC<IntegrationsStepProps> = ({ onContinue, updateH
 
   return (
     <Box sx={{ width: '100%', maxWidth: '100%', p: { xs: 1, sm: 2, md: 3 } }}>
+      <CustomApiConnectDialog
+        open={customApiDialogOpen}
+        onClose={() => setCustomApiDialogOpen(false)}
+        onConnect={connectCustomApi}
+      />
       {/* Email Address Section */}
       <EmailSection email={email} onEmailChange={setEmail} />
 
@@ -970,6 +1014,12 @@ const IntegrationsStep: React.FC<IntegrationsStepProps> = ({ onContinue, updateH
         </div>
       </Fade>
 
+      {/* Custom API / Webhook Connect Dialog */}
+      <CustomApiConnectDialog
+        open={customApiDialogOpen}
+        onClose={() => setCustomApiDialogOpen(false)}
+        onConnect={connectCustomApi}
+      />
 
       {/* Success Toast */}
       <Snackbar
